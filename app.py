@@ -22,6 +22,10 @@ def wazzup_webhook():
         phone = message['chatId']
         print("📞 Получен номер:", phone)
 
+        # Убираем первую цифру "7", если она есть
+        if phone.startswith("7"):
+        phone = phone[1:]
+
         # Извлекаем последние 10 цифр
         last_10_digits = phone[-10:]
 
