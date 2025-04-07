@@ -25,11 +25,11 @@ def wazzup_webhook():
         # Извлекаем последние 10 цифр
         last_10_digits = phone[-10:]
 
-        # Поиск контакта по номеру
+        # Поиск контакта по номеру (совпадение по последним цифрам)
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
             "filter": {
-                "*PHONE": last_10_digits
+                "=%PHONE": last_10_digits
             },
             "select": ["ID"]
         })
