@@ -5,7 +5,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Твой Bitrix24 вебхук
-BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz/'
+BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
 FIELD_CODE = 'UF_CRM_1743763731661'
 
 @app.route('/', methods=['POST'])
