@@ -1,12 +1,17 @@
-from flask import Flask, request
+from flask import Flask, request 
 import requests
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 
 # Твой Bitrix24 вебхук
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
 FIELD_CODE = 'UF_CRM_1743763731661'
+
+# Преобразование номера в единый формат
+def format_phone(phone):
+    return re.sub(r'\D', '', phone)  # Удаляем все символы, кроме цифр
 
 @app.route('/', methods=['POST'])
 def wazzup_webhook():
@@ -22,20 +27,17 @@ def wazzup_webhook():
         phone = message['chatId']
         print("📞 Получен номер:", phone)
 
-        # Убираем первую цифру "7", если она есть
-        if phone.startswith("7"):
-            phone = phone[1:]
+        # Преобразуем номер в нужный формат
+        phone = format_phone(phone)
+        print("📞 Отформатированный номер:", phone)
 
-        # Извлекаем последние 10 цифр
-        last_10_digits = phone[-10:]
-
-        # Поиск контакта по номеру
+        # Поиск контакта по отформатированному номеру
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
-        "filter": {
-        "PHONE": f"+7{last_10_digits}"  # Используем точный формат
-        },
-        "select": ["ID"]
+            "filter": {
+                "PHONE": phone  # Ищем по отформатированному номеру
+            },
+            "select": ["ID"]
         })
 
         print("🔍 Ответ на поиск контакта:", search_response.text)
@@ -63,14 +65,7 @@ def wazzup_webhook():
             print("❌ Сделки не найдены")
             return '', 200
 
-        # Выбор правильной сделки
-        deal_id = None
-        for deal in deal_result:
-            if deal['ID'] == '60417':  # Пример условия для выбора нужной сделки
-                deal_id = deal['ID']
-                break
-        if not deal_id:
-            deal_id = deal_result[0]['ID']  # Если подходящая сделка не найдена, выбираем первую
+        deal_id = deal_result[0]['ID']
         print("✅ Сделка найдена:", deal_id)
 
         # Обновляем сделку
@@ -89,3 +84,6 @@ def wazzup_webhook():
         print("❗ Ошибка в обработке:", str(e))
 
     return '', 200
+
+if __name__ == "__main__":
+    app.run(debug=True)
