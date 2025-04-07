@@ -24,12 +24,19 @@ def wazzup_webhook():
 
         # Пробуем найти контакт по номеру
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
+                last_10_digits = phone[-10:]
         search_response = requests.post(contact_search_url, json={
             "filter": {
-                "PHONE": f"%{phone[-10:]}"
+                "LOGIC": "OR",
+                "PHONE": phone,
+                "PHONE_mobile": phone,
+                "PHONE_work": phone,
+                "PHONE_home": phone,
+                "=%PHONE": last_10_digits  # найдёт по совпадению в конце
             },
             "select": ["ID"]
         })
+
 
         print("🔍 Ответ на поиск контакта:", search_response.text)
         contact_result = search_response.json()
