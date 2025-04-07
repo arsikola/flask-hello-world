@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request 
 import requests
 from datetime import datetime
 
@@ -28,12 +28,13 @@ def wazzup_webhook():
 
         # Извлекаем последние 10 цифр
         last_10_digits = phone[-10:]
+        print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
         # Поиск контакта по номеру
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
             "filter": {
-                "*PHONE": last_10_digits  # Ищем по любому типу номера телефона
+                "*PHONE": last_10_digits,  # Поиск по номеру телефона
             },
             "select": ["ID", "PHONE"]
         })
@@ -45,21 +46,8 @@ def wazzup_webhook():
             print("❌ Контакт не найден")
             return '', 200
 
-        contact_id = None
-        # Проверяем найденные контакты
-        for contact in contact_result.get('result', []):
-            phones = contact.get('PHONE', [])
-            for phone_entry in phones:
-                if last_10_digits in phone_entry.get('VALUE', ''):
-                    contact_id = contact['ID']
-                    print("✅ Контакт найден:", contact_id)
-                    break
-            if contact_id:
-                break
-
-        if not contact_id:
-            print("❌ Контакт не найден")
-            return '', 200
+        contact_id = contact_result['result'][0]['ID']
+        print(f"✅ Контакт найден: {contact_id}")
 
         # Ищем сделку по контакту
         deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
@@ -76,9 +64,9 @@ def wazzup_webhook():
             print("❌ Сделки не найдены")
             return '', 200
 
-        # Возьмем первую сделку из списка
+        # Проверяем, есть ли несколько сделок, выбираем нужную
         deal_id = deal_result[0]['ID']
-        print("✅ Сделка найдена:", deal_id)
+        print(f"✅ Сделка найдена: {deal_id}")
 
         # Обновляем сделку
         now = datetime.now().strftime('%Y-%m-%d')
