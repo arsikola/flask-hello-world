@@ -5,7 +5,7 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Твой Bitrix24 вебхук
-BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
+BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lkuzy'
 FIELD_CODE = 'UF_CRM_1743763731661'
 
 @app.route('/', methods=['POST'])
@@ -13,7 +13,7 @@ def wazzup_webhook():
     data = request.json
     print("📬 Вебхук от Wazzup:", data)
 
-        try:
+    try:
         message = data['messages'][0]
         if message['status'] != 'inbound':
             print("➡️ Сообщение не входящее, пропускаем")
