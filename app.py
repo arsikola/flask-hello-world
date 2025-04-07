@@ -29,7 +29,7 @@ def wazzup_webhook():
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
             "filter": {
-                "*PHONE": last_10_digits
+                "PHONE": last_10_digits
             },
             "select": ["ID"]
         })
