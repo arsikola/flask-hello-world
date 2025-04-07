@@ -1,4 +1,4 @@
-from flask import Flask, request 
+from flask import Flask, request
 import requests
 from datetime import datetime
 
@@ -25,11 +25,6 @@ def wazzup_webhook():
         # Убираем первую цифру "7", если она есть
         if phone.startswith("7"):
             phone = phone[1:]
-
-        # Проверка на длину номера
-        if len(phone) != 10:
-            print("❌ Некорректный номер, не 10 цифр")
-            return '', 200
 
         # Извлекаем последние 10 цифр
         last_10_digits = phone[-10:]
@@ -68,7 +63,14 @@ def wazzup_webhook():
             print("❌ Сделки не найдены")
             return '', 200
 
-        deal_id = deal_result[0]['ID']
+        # Выбор правильной сделки
+        deal_id = None
+        for deal in deal_result:
+            if deal['ID'] == '60417':  # Пример условия для выбора нужной сделки
+                deal_id = deal['ID']
+                break
+        if not deal_id:
+            deal_id = deal_result[0]['ID']  # Если подходящая сделка не найдена, выбираем первую
         print("✅ Сделка найдена:", deal_id)
 
         # Обновляем сделку
