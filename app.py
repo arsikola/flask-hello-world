@@ -45,14 +45,32 @@ def wazzup_webhook():
             print("❌ Контакт не найден")
             return '', 200
 
-        contact_id = contact_result['result'][0]['ID']
-        print("✅ Контакт найден:", contact_id)
+        contact_id = None
+        # Отфильтровываем найденные контакты по номеру телефона
+        for contact in contact_result.get('result', []):
+            contact_id = contact['ID']
+            # Запрашиваем сам контакт по ID, чтобы проверить номер
+            contact_data_url = f'{BITRIX_WEBHOOK}/crm.contact.get'
+            contact_data = requests.post(contact_data_url, json={"id": contact_id}).json()
+            phones = contact_data.get('result', {}).get('PHONE', [])
+            for phone_entry in phones:
+                if last_10_digits in phone_entry.get('VALUE', ''):
+                    print("✅ Контакт найден:", contact_id)
+                    break
+            else:
+                continue  # Если не нашли номер — ищем дальше
+            break  # Контакт найден, выходим из цикла
+
+        if not contact_id:
+            print("❌ Контакт не найден")
+            return '', 200
 
         # Ищем сделку по контакту
         deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
         deal_response = requests.post(deal_search_url, json={
             "filter": {
-                "CONTACT_ID": contact_id
+                "CONTACT_ID": contact_id,
+                "CLOSED": "N"  # Фильтруем только открытые сделки
             },
             "select": ["ID"]
         })
@@ -83,3 +101,6 @@ def wazzup_webhook():
 
     return '', 200
 
+@app.route('/', methods=['GET'])
+def index():
+    return 'Сервер работает! ✅', 200
