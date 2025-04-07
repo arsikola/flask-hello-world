@@ -19,20 +19,21 @@ def wazzup_webhook():
             print("➡️ Сообщение не входящее, пропускаем")
             return '', 200
 
-        phone = message['chatId']
+                phone = message['chatId']
         print("📞 Получен номер:", phone)
 
-        # Пробуем найти контакт по номеру
-        contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
-                last_10_digits = phone[-10:]
+        # Извлекаем последние 10 цифр
+        last_10_digits = phone[-10:]
 
+        # Поиск контакта по подстроке номера
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
             "filter": {
-                "*PHONE": last_10_digits  # * = ищет по части строки
+                "*PHONE": last_10_digits
             },
             "select": ["ID"]
         })
+
 
         print("🔍 Ответ на поиск контакта:", search_response.text)
         contact_result = search_response.json()
