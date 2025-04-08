@@ -1,53 +1,73 @@
 import os
+from flask import Flask, request
 import requests
-from flask import Flask, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
-BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
-FIELD_CODE = 'UF_CRM_1743763731661'  # Дата последнего ответа клиента
 
-@app.route('/', methods=['POST'])
+# Получаем URL вебхука из переменной окружения
+BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+FIELD_CODE = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
+
+@app.route("/", methods=["POST"])
 def wazzup_webhook():
     data = request.get_json()
-    
-    # 💬 Обработка только входящих сообщений
-    messages = data.get("messages")
-    if not messages or messages[0].get("isEcho"):
-        print("❗ Ошибка в обработке: 'messages'")
-        return jsonify({"status": "ignored"})
+    print(f"📬 Вебхук от Wazzup: {data}")
 
-    message = messages[0]
+    if "messages" not in data:
+        print("❗ Ошибка в обработке: 'messages'")
+        return "", 200
+
+    message = data["messages"][0]
+
+    if message.get("isEcho") or message.get("status") != "inbound":
+        print("➡️ Сообщение не входящее, пропускаем")
+        return "", 200
+
     phone_raw = message["chatId"]
     print(f"📞 Получен номер: {phone_raw}")
-    phone = "+7" + phone_raw[-10:] if not phone_raw.startswith("+") else phone_raw
-    print(f"📞 Точный номер для поиска: {phone}")
 
-    # 🔍 Поиск контакта
+    # 🔍 Используем точный номер с +7
+    if not phone_raw.startswith("+"):
+        phone_full = "+7" + phone_raw[-10:]
+    else:
+        phone_full = phone_raw
+    print(f"📞 Точный номер для поиска: {phone_full}")
+
+    # Поиск контакта по точному номеру
     contact_url = f"{BITRIX_WEBHOOK_URL}/crm.contact.list.json"
     contact_filter = {
         "filter": {
-            "=PHONE": phone
+            "=PHONE": phone_full
         },
         "select": ["ID", "PHONE"]
     }
     contact_resp = requests.post(contact_url, json=contact_filter).json()
     print(f"🔍 Ответ на поиск контакта: {contact_resp}")
 
-    if not contact_resp.get("result"):
-        print("❌ Контакт не найден")
-        return jsonify({"status": "no_contact"})
+    contact_id = None
+    for contact in contact_resp.get("result", []):
+        for phone in contact.get("PHONE", []):
+            phone_cleaned = phone["VALUE"].replace("(", "").replace(")", "").replace("-", "").replace(" ", "")
+            if phone_cleaned == phone_full:
+                contact_id = contact["ID"]
+                break
+        if contact_id:
+            break
 
-    contact_id = contact_resp["result"][0]["ID"]
+    if not contact_id:
+        print("❌ Контакт не найден")
+        return "", 200
+
     print(f"✅ Контакт найден: {contact_id}")
 
-    # 📦 Поиск сделок
+    # Поиск сделок по контакту
     deal_url = f"{BITRIX_WEBHOOK_URL}/crm.deal.list.json"
     deal_filter = {
         "filter": {
             "CONTACT_ID": contact_id
         },
-        "select": ["ID", "TITLE"]
+        "select": ["ID"]
     }
     deal_resp = requests.post(deal_url, json=deal_filter).json()
     deals = deal_resp.get("result", [])
@@ -55,21 +75,24 @@ def wazzup_webhook():
 
     if not deals:
         print("❌ Сделки не найдены")
-        return jsonify({"status": "no_deals"})
+        return "", 200
 
-    deal_id = deals[0]["ID"]
+    # Используем самую новую (по ID)
+    latest_deal = sorted(deals, key=lambda d: int(d["ID"]), reverse=True)[0]
+    deal_id = latest_deal["ID"]
     print(f"✅ Сделка найдена: {deal_id}")
 
-    # 🛠 Обновление поля
+    # Обновляем нужное поле в сделке
     update_url = f"{BITRIX_WEBHOOK_URL}/crm.deal.update.json"
-    today = datetime.today().strftime('%Y-%m-%d')
-    print(f"🛠 Обновляем поле {FIELD_CODE} на значение {today}")
-    update_resp = requests.post(update_url, json={
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    update_payload = {
         "id": deal_id,
         "fields": {
-            FIELD_CODE: today
+            FIELD_CODE: today_str
         }
-    }).json()
+    }
+    print(f"🛠 Обновляем поле {FIELD_CODE} на значение {today_str}")
+    update_resp = requests.post(update_url, json=update_payload).json()
     print(f"🛡 Сделка обновлена: {update_resp}")
 
-    return jsonify({"status": "success"})
+    return "", 200
