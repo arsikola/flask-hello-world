@@ -6,7 +6,6 @@ import time
 
 app = Flask(__name__)
 
-# Bitrix24 вебхук и поле
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
 FIELD_CODE = 'UF_CRM_1743763731661'
 
@@ -37,7 +36,6 @@ def wazzup_webhook():
         last_10_digits = normalize_phone(phone)
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Поиск контакта с логами и паузой
         contact_id = None
         start = 0
 
@@ -52,15 +50,21 @@ def wazzup_webhook():
                     },
                     "start": start
                 }, timeout=30)
+                try:
+                    result = response.json()
+                except Exception as e:
+                    print(f"❌ Ошибка при разборе JSON (страница {start}):", str(e))
+                    print("📄 Ответ Bitrix:", response.text)
+                    return '', 500
             except requests.exceptions.RequestException as e:
                 print(f"❌ Ошибка запроса к Bitrix (контакты): {e}")
                 return '', 500
 
-            result = response.json()
             contacts = result.get('result', [])
             print(f"📦 Получено {len(contacts)} контактов")
 
             if not contacts:
+                print(f"⛔ Пустая страница — контакты закончились на start={start}")
                 break
 
             for contact in contacts:
@@ -84,7 +88,6 @@ def wazzup_webhook():
             print("❌ Контакт не найден")
             return '', 200
 
-        # Поиск последней активной сделки
         try:
             print("🔍 Поиск активных сделок")
             deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
@@ -110,7 +113,6 @@ def wazzup_webhook():
         deal_id = deal_result[0]['ID']
         print(f"✅ Последняя активная сделка найдена: {deal_id}")
 
-        # Обновляем сделку
         now = datetime.now().strftime('%Y-%m-%d')
         try:
             print(f"📝 Обновление сделки ID {deal_id} полем {FIELD_CODE} = {now}")
