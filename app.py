@@ -1,73 +1,83 @@
-import os
+from flask import Flask, request
 import requests
-from flask import Flask, request, jsonify
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 
-# Конфигурация
-WEBHOOK_TOKEN = os.getenv("BITRIX_WEBHOOK")
-FIELD_CODE = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+FIELD_CODE = 'UF_CRM_1743763731661'  # Дата последнего ответа клиента
 
 @app.route("/", methods=["POST"])
 def wazzup_webhook():
-    data = request.json
+    data = request.get_json()
 
-    # Если это не входящее сообщение — игнорируем
-    if "messages" not in data or not data["messages"]:
-        print("❗ Ошибка в обработке: 'messages'")
-        return "", 200
+    try:
+        if "messages" not in data:
+            print("❗ Ошибка в обработке: 'messages'")
+            return "", 200
 
-    message = data["messages"][0]
-    if message.get("isEcho") or message.get("type") != "text":
-        print("➡️ Сообщение не входящее, пропускаем")
-        return "", 200
+        for message in data["messages"]:
+            if message.get("isEcho"):
+                print("➡️ Сообщение не входящее, пропускаем")
+                continue
 
-    phone_raw = message["chatId"]
-    phone = phone_raw[-10:]  # Последние 10 цифр
-    print(f"📞 Получен номер: {phone_raw}")
-    print(f"📞 Последние 10 цифр номера: {phone}")
+            phone_raw = message["chatId"]
+            print(f"📞 Получен номер: {phone_raw}")
+            phone = phone_raw[-10:]
+            print(f"📞 Последние 10 цифр номера: {phone}")
 
-    # Поиск контакта
-    contact_url = f"{WEBHOOK_TOKEN}/crm.contact.list.json"
-    contact_filter = {"filter": { "PHONE": phone }, "select": ["ID"]}
-    contact_resp = requests.post(contact_url, json=contact_filter).json()
+            # Поиск контакта по номеру
+            contact_filter = {
+                "filter": {
+                    "PHONE": [{"VALUE": phone}]
+                },
+                "select": ["ID"]
+            }
+            contact_url = f"{BITRIX_WEBHOOK_URL}/crm.contact.list.json"
+            contact_resp = requests.post(contact_url, json=contact_filter).json()
 
-    contact_list = contact_resp.get("result", [])
-    if not contact_list:
-        print("❌ Контакт не найден")
-        return "", 200
+            print(f"🔍 Ответ на поиск контакта: {contact_resp}")
 
-    contact_id = contact_list[0]["ID"]
-    print(f"✅ Контакт найден: {contact_id}")
+            if "result" not in contact_resp or not contact_resp["result"]:
+                print("❌ Контакт не найден")
+                return "", 200
 
-    # Поиск одной сделки
-    deal_url = f"{WEBHOOK_TOKEN}/crm.deal.list.json"
-    deal_filter = {
-        "filter": { "CONTACT_ID": contact_id },
-        "select": ["ID", "DATE_CREATE"],
-        "order": { "DATE_CREATE": "DESC" },
-        "start": 0
-    }
-    deal_resp = requests.post(deal_url, json=deal_filter).json()
-    deals = deal_resp.get("result", [])
-    if not deals:
-        print("❌ Сделка не найдена")
-        return "", 200
+            contact_id = contact_resp["result"][0]["ID"]
+            print(f"✅ Контакт найден: {contact_id}")
 
-    deal_id = deals[0]["ID"]
-    print(f"✅ Сделка найдена: {deal_id}")
+            # Поиск сделок контакта
+            deals_filter = {
+                "filter": {"CONTACT_ID": contact_id},
+                "select": ["ID", "STAGE_ID", "TITLE", FIELD_CODE],
+                "order": {"ID": "DESC"}
+            }
+            deals_url = f"{BITRIX_WEBHOOK_URL}/crm.deal.list.json"
+            deals_resp = requests.post(deals_url, json=deals_filter).json()
 
-    # Обновление поля
-    update_url = f"{WEBHOOK_TOKEN}/crm.deal.update.json"
-    payload = {
-        "id": deal_id,
-        "fields": {
-            FIELD_CODE: datetime.now().strftime("%Y-%m-%d")
-        }
-    }
-    print(f"🛠 Обновляем поле {FIELD_CODE} на значение {payload['fields'][FIELD_CODE]}")
-    update_resp = requests.post(update_url, json=payload).json()
-    print(f"🛡 Сделка обновлена: {update_resp}")
+            print(f"📦 Найдено сделок: {len(deals_resp.get('result', []))}")
+            if not deals_resp.get("result"):
+                print("❌ Сделки не найдены")
+                return "", 200
+
+            deal_id = deals_resp["result"][0]["ID"]
+            print(f"✅ Сделка найдена: {deal_id}")
+
+            # Обновление поля "Дата последнего ответа клиента"
+            today = datetime.now().strftime("%Y-%m-%d")
+            update_url = f"{BITRIX_WEBHOOK_URL}/crm.deal.update.json"
+            update_data = {
+                "id": deal_id,
+                "fields": {
+                    FIELD_CODE: today
+                }
+            }
+            print(f"🛠 Обновляем поле {FIELD_CODE} на значение {today}")
+            update_resp = requests.post(update_url, json=update_data).json()
+            print(f"🛡 Сделка обновлена: {update_resp}")
+
+    except Exception as e:
+        print(f"❌ Ошибка: {e}")
 
     return "", 200
