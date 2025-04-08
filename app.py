@@ -54,13 +54,11 @@ def wazzup_webhook():
                 print(f"❌ Ошибка запроса к Bitrix (контакты): {e}")
                 return '', 500
 
-            # Проверяем статус ответа
             if response.status_code != 200:
-                print(f"❌ Неверный HTTP-ответ от Bitrix на странице {start}: {response.status_code}")
+                print(f"❌ HTTP {response.status_code} от Bitrix на странице {start}")
                 print("📄 Ответ:", response.text)
                 return '', 500
 
-            # Пробуем разобрать JSON
             try:
                 result = response.json()
             except Exception as e:
@@ -72,12 +70,11 @@ def wazzup_webhook():
             print(f"📦 Получено {len(contacts)} контактов")
 
             if not contacts:
-                print(f"⛔ Пустая страница — контакты закончились на start={start}")
+                print(f"⛔ Контакты закончились на странице {start}")
                 break
 
             for contact in contacts:
-                phones = contact.get('PHONE', [])
-                for phone_entry in phones:
+                for phone_entry in contact.get('PHONE', []):
                     stored_number = normalize_phone(phone_entry['VALUE'])
                     if stored_number == last_10_digits:
                         contact_id = contact['ID']
@@ -96,6 +93,7 @@ def wazzup_webhook():
             print("❌ Контакт не найден")
             return '', 200
 
+        # Поиск последней активной сделки
         try:
             print("🔍 Поиск активных сделок")
             deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
@@ -128,8 +126,10 @@ def wazzup_webhook():
         print(f"✅ Последняя активная сделка найдена: {deal_id}")
 
         now = datetime.now().strftime('%Y-%m-%d')
+
+        # 🔒 Обновляем ТОЛЬКО пользовательское поле, никакой стадии!
         try:
-            print(f"📝 Обновление сделки ID {deal_id} полем {FIELD_CODE} = {now}")
+            print(f"🛡 Обновляем сделку {deal_id}, только поле {FIELD_CODE} = {now}")
             update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
             update_response = requests.post(update_url, json={
                 "id": deal_id,
@@ -143,7 +143,7 @@ def wazzup_webhook():
                 print("📄 Ответ:", update_response.text)
                 return '', 500
 
-            print("📝 Ответ от Bitrix:", update_response.text)
+            print("🛡 Сделка обновлена без изменений стадии")
         except requests.exceptions.RequestException as e:
             print(f"❌ Ошибка при обновлении сделки: {e}")
             return '', 500
