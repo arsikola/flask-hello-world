@@ -3,11 +3,13 @@ import requests
 from datetime import datetime
 import re
 import time
+import traceback
 
 app = Flask(__name__)
 
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
 FIELD_CODE = 'UF_CRM_1743763731661'
+MAX_PAGES = 3000
 
 def normalize_phone(phone):
     return re.sub(r'\D', '', phone)[-10:]
@@ -38,11 +40,12 @@ def wazzup_webhook():
 
         contact_id = None
         start = 0
+        pages_checked = 0
 
-        while True:
-            print(f"🔁 Поиск контактов, страница start={start}")
-            contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
+        while pages_checked < MAX_PAGES:
             try:
+                print(f"🔁 Поиск контактов, страница start={start}")
+                contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
                 response = requests.post(contact_search_url, json={
                     "select": ["ID", "PHONE"],
                     "filter": {
@@ -50,50 +53,52 @@ def wazzup_webhook():
                     },
                     "start": start
                 }, timeout=30)
-            except requests.exceptions.RequestException as e:
-                print(f"❌ Ошибка запроса к Bitrix (контакты): {e}")
-                return '', 500
 
-            if response.status_code != 200:
-                print(f"❌ HTTP {response.status_code} от Bitrix на странице {start}")
-                print("📄 Ответ:", response.text)
-                return '', 500
+                if response.status_code != 200:
+                    print(f"❌ HTTP {response.status_code} от Bitrix")
+                    print("📄 Ответ:", response.text)
+                    return '', 200
 
-            try:
-                result = response.json()
-            except Exception as e:
-                print(f"❌ Ошибка разбора JSON на странице {start}: {e}")
-                print("📄 Ответ Bitrix:", response.text)
-                return '', 500
+                try:
+                    result = response.json()
+                except Exception as e:
+                    print(f"❌ Ошибка JSON: {e}")
+                    print("📄 Ответ Bitrix:", response.text)
+                    return '', 200
 
-            # 🔐 Новая проверка: валидность структуры
-            if "result" not in result or not isinstance(result["result"], list):
-                print(f"⚠️ Невалидный ответ Bitrix на странице {start}:")
-                print(result)
-                return '', 200
+                if "result" not in result or not isinstance(result["result"], list):
+                    print(f"⚠️ Невалидный формат ответа на странице {start}:")
+                    print(result)
+                    return '', 200
 
-            contacts = result["result"]
-            print(f"📦 Получено {len(contacts)} контактов")
+                contacts = result["result"]
+                print(f"📦 Получено {len(contacts)} контактов")
 
-            if not contacts:
-                print(f"⛔ Контакты закончились на странице {start}")
-                break
-
-            for contact in contacts:
-                for phone_entry in contact.get('PHONE', []):
-                    stored_number = normalize_phone(phone_entry['VALUE'])
-                    if stored_number == last_10_digits:
-                        contact_id = contact['ID']
-                        print(f"✅ Контакт найден: {contact_id}")
-                        break
-                if contact_id:
+                if not contacts:
+                    print(f"⛔ Контакты закончились на странице {start}")
                     break
 
-            if contact_id or 'next' not in result:
-                break
+                for contact in contacts:
+                    for phone_entry in contact.get('PHONE', []):
+                        stored_number = normalize_phone(phone_entry['VALUE'])
+                        if stored_number == last_10_digits:
+                            contact_id = contact['ID']
+                            print(f"✅ Контакт найден: {contact_id}")
+                            break
+                    if contact_id:
+                        break
 
-            start = result['next']
-            time.sleep(0.3)
+                if contact_id or 'next' not in result:
+                    break
+
+                start = result['next']
+                pages_checked += 1
+                time.sleep(0.3)
+
+            except Exception:
+                print("❗ Исключение в цикле поиска контактов:")
+                traceback.print_exc()
+                return '', 200
 
         if not contact_id:
             print("❌ Контакт не найден")
@@ -116,12 +121,13 @@ def wazzup_webhook():
             if deal_response.status_code != 200:
                 print(f"❌ Ошибка HTTP при получении сделок: {deal_response.status_code}")
                 print("📄 Ответ:", deal_response.text)
-                return '', 500
+                return '', 200
 
             deal_result = deal_response.json().get('result', [])
-        except Exception as e:
-            print(f"❌ Ошибка при получении сделок: {e}")
-            return '', 500
+        except Exception:
+            print("❗ Ошибка при получении сделок:")
+            traceback.print_exc()
+            return '', 200
 
         if not deal_result:
             print("❌ Активные сделки не найдены")
@@ -145,16 +151,18 @@ def wazzup_webhook():
             if update_response.status_code != 200:
                 print(f"❌ Ошибка HTTP при обновлении сделки: {update_response.status_code}")
                 print("📄 Ответ:", update_response.text)
-                return '', 500
+                return '', 200
 
             print("🛡 Сделка обновлена без изменений стадии")
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Ошибка при обновлении сделки: {e}")
-            return '', 500
+        except Exception:
+            print("❗ Ошибка при обновлении сделки:")
+            traceback.print_exc()
+            return '', 200
 
-    except Exception as e:
-        print("❗ Общая ошибка обработки:", str(e))
-        return '', 500
+    except Exception:
+        print("❗ Общая ошибка в верхнем уровне:")
+        traceback.print_exc()
+        return '', 200
 
     return '', 200
 
