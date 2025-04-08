@@ -1,6 +1,7 @@
 from flask import Flask, request 
 import requests
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 
@@ -8,47 +9,72 @@ app = Flask(__name__)
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
 FIELD_CODE = 'UF_CRM_1743763731661'
 
+# Функция нормализации телефона
+def normalize_phone(phone):
+    return re.sub(r'\D', '', phone)[-10:]
+
 @app.route('/', methods=['POST'])
 def wazzup_webhook():
     data = request.json
     print("📬 Вебхук от Wazzup:", data)
 
     try:
+        # Проверка на входящее сообщение
+        if 'messages' not in data or not data['messages']:
+            print("⚠️ Нет сообщений в теле запроса")
+            return '', 200
+
         message = data['messages'][0]
-        if message['status'] != 'inbound':
+        if message.get('status') != 'inbound':
             print("➡️ Сообщение не входящее, пропускаем")
             return '', 200
 
         phone = message['chatId']
         print("📞 Получен номер:", phone)
 
-        # Убираем первую цифру "7", если она есть
         if phone.startswith("7"):
             phone = phone[1:]
 
-        # Извлекаем последние 10 цифр
-        last_10_digits = phone[-10:]
+        last_10_digits = normalize_phone(phone)
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Поиск контакта по номеру (без учета типа телефона, только по номеру)
-        contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
-        search_response = requests.post(contact_search_url, json={
-            "filter": {
-                "*PHONE": last_10_digits
-            },
-            "select": ["ID", "PHONE"]
-        })
+        # Перебор всех контактов с пагинацией
+        contact_id = None
+        start = 0
+        while True:
+            contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
+            response = requests.post(contact_search_url, json={
+                "select": ["ID", "PHONE"],
+                "filter": {
+                    "!PHONE": ""
+                },
+                "start": start
+            })
 
-        contact_result = search_response.json()
-        contacts = contact_result.get('result', [])
-        print(f"🔍 Найдено контактов: {len(contacts)}")
+            result = response.json()
+            contacts = result.get('result', [])
+            if not contacts:
+                break
 
-        if not contacts:
+            for contact in contacts:
+                phones = contact.get('PHONE', [])
+                for phone_entry in phones:
+                    stored_number = normalize_phone(phone_entry['VALUE'])
+                    if stored_number == last_10_digits:
+                        contact_id = contact['ID']
+                        print(f"✅ Контакт найден: {contact_id}")
+                        break
+                if contact_id:
+                    break
+
+            if contact_id or 'next' not in result:
+                break
+
+            start = result['next']
+
+        if not contact_id:
             print("❌ Контакт не найден")
             return '', 200
-
-        contact_id = contacts[0]['ID']
-        print(f"✅ Контакт найден: {contact_id}")
 
         # Поиск сделки по контакту
         deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
