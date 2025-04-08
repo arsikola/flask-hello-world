@@ -40,9 +40,9 @@ def wazzup_webhook():
         start = 0
 
         while True:
+            print(f"🔁 Поиск контактов, страница start={start}")
+            contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
             try:
-                print(f"🔁 Поиск контактов, страница start={start}")
-                contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
                 response = requests.post(contact_search_url, json={
                     "select": ["ID", "PHONE"],
                     "filter": {
@@ -50,14 +50,22 @@ def wazzup_webhook():
                     },
                     "start": start
                 }, timeout=30)
-                try:
-                    result = response.json()
-                except Exception as e:
-                    print(f"❌ Ошибка при разборе JSON (страница {start}):", str(e))
-                    print("📄 Ответ Bitrix:", response.text)
-                    return '', 500
             except requests.exceptions.RequestException as e:
                 print(f"❌ Ошибка запроса к Bitrix (контакты): {e}")
+                return '', 500
+
+            # Проверяем статус ответа
+            if response.status_code != 200:
+                print(f"❌ Неверный HTTP-ответ от Bitrix на странице {start}: {response.status_code}")
+                print("📄 Ответ:", response.text)
+                return '', 500
+
+            # Пробуем разобрать JSON
+            try:
+                result = response.json()
+            except Exception as e:
+                print(f"❌ Ошибка разбора JSON на странице {start}: {e}")
+                print("📄 Ответ Bitrix:", response.text)
                 return '', 500
 
             contacts = result.get('result', [])
@@ -101,39 +109,11 @@ def wazzup_webhook():
                     "DATE_CREATE": "DESC"
                 }
             }, timeout=30)
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Ошибка запроса к Bitrix (сделки): {e}")
-            return '', 500
 
-        deal_result = deal_response.json().get('result', [])
-        if not deal_result:
-            print("❌ Активные сделки не найдены")
-            return '', 200
+            if deal_response.status_code != 200:
+                print(f"❌ Ошибка HTTP при получении сделок: {deal_response.status_code}")
+                print("📄 Ответ:", deal_response.text)
+                return '', 500
 
-        deal_id = deal_result[0]['ID']
-        print(f"✅ Последняя активная сделка найдена: {deal_id}")
-
-        now = datetime.now().strftime('%Y-%m-%d')
-        try:
-            print(f"📝 Обновление сделки ID {deal_id} полем {FIELD_CODE} = {now}")
-            update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
-            update_response = requests.post(update_url, json={
-                "id": deal_id,
-                "fields": {
-                    FIELD_CODE: now
-                }
-            }, timeout=30)
-
-            print("📝 Ответ от Bitrix:", update_response.text)
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Ошибка при обновлении сделки: {e}")
-            return '', 500
-
-    except Exception as e:
-        print("❗ Общая ошибка обработки:", str(e))
-        return '', 500
-
-    return '', 200
-
-if __name__ == '__main__':
-    app.run(debug=True)
+            deal_result = deal_response.json().get('result', [])
+        except
