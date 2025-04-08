@@ -86,4 +86,13 @@ def wazzup_webhook():
             }
         })
 
-        print(f"🛠 Обновляем поле {FIELD
+        print(f"🛠 Обновляем поле {FIELD_CODE} на значение {now}")
+        print("🛡 Сделка обновлена:", update_response.text)
+
+    except Exception as e:
+        print("❗ Ошибка в обработке:", str(e))
+
+    return '', 200
+
+if __name__ == '__main__':
+    app.run(debug=True)
