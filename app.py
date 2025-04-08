@@ -1,83 +1,100 @@
 import os
+from flask import Flask, request
 import requests
-from flask import Flask, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
-BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
 FIELD_CODE = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
 
 @app.route("/", methods=["POST"])
 def wazzup_webhook():
-    data = request.get_json()
-    print("📬 Вебхук от Wazzup:", data)
+    data = request.json
+    print(f"📬 Вебхук от Wazzup: {data}")
 
-    messages = data.get("messages")
-    if not messages:
+    # Обработка только входящих сообщений
+    if "messages" not in data:
         print("❗ Ошибка в обработке: 'messages'")
-        return jsonify(success=True)
+        return "OK", 200
 
-    message = messages[0]
-    phone_raw = message["chatId"]
+    message = data["messages"][0]
+    if message.get("isEcho") or message.get("status") != "inbound":
+        print("➡️ Сообщение не входящее, пропускаем")
+        return "OK", 200
+
+    phone_raw = message.get("chatId")
     print(f"📞 Получен номер: {phone_raw}")
 
-    # Форматы номера для поиска
-    formats = format_phone_variants(phone_raw)
-    print("📞 Форматы номера для поиска:", formats)
+    # Генерация форматов телефона
+    phone_tail = phone_raw[-10:]
+    variants = [
+        f"+7{phone_tail}",
+        f"+7({phone_tail[:3]}){phone_tail[3:6]}-{phone_tail[6:8]}-{phone_tail[8:]}",
+        f"+7 {phone_tail[:3]} {phone_tail[3:6]} {phone_tail[6:8]} {phone_tail[8:]}",
+        f"+7-{phone_tail[:3]}-{phone_tail[3:6]}-{phone_tail[6:8]}-{phone_tail[8:]}"
+    ]
+    print(f"📞 Форматы номера для поиска: {variants}")
 
-    contact_id = find_contact_by_phone_variants(formats)
+    # Поиск контакта по всем вариантам
+    contact_id = None
+    for variant in variants:
+        contact_filter = {
+            "filter": {
+                "PHONE": variant
+            },
+            "select": ["ID", "PHONE"]
+        }
+        contact_url = f"{WEBHOOK_URL}/crm.contact.list.json"
+        contact_resp = requests.post(contact_url, json=contact_filter).json()
+        print(f"🔍 Ответ на поиск контакта по {variant}: {contact_resp}")
+
+        result = contact_resp.get("result", [])
+        for contact in result:
+            phones = contact.get("PHONE", [])
+            for phone in phones:
+                if phone.get("VALUE") == variant:
+                    contact_id = contact["ID"]
+                    break
+            if contact_id:
+                break
+        if contact_id:
+            break
+
     if not contact_id:
         print("❌ Контакт не найден")
-        return jsonify(success=True)
-    print("✅ Контакт найден:", contact_id)
+        return "OK", 200
+
+    print(f"✅ Контакт найден: {contact_id}")
 
     # Поиск сделок по контакту
-    deals = requests.post(f"{BITRIX_WEBHOOK_URL}/crm.deal.list.json", json={
+    deals_url = f"{WEBHOOK_URL}/crm.deal.list.json"
+    deals_resp = requests.post(deals_url, json={
         "filter": {"CONTACT_ID": contact_id},
-        "select": ["ID"]
-    }).json().get("result", [])
+        "select": ["ID"],
+        "order": {"ID": "DESC"}
+    }).json()
+
+    deals = deals_resp.get("result", [])
+    print(f"📦 Найдено сделок: {len(deals)}")
 
     if not deals:
         print("❌ Сделки не найдены")
-        return jsonify(success=True)
-    
+        return "OK", 200
+
     deal_id = deals[0]["ID"]
-    print("✅ Сделка найдена:", deal_id)
+    print(f"✅ Сделка найдена: {deal_id}")
 
-    # Обновление поля даты
-    date_value = datetime.now().strftime("%Y-%m-%d")
-    print(f"🛠 Обновляем поле {FIELD_CODE} на значение {date_value}")
+    # Обновляем поле
+    today = datetime.today().strftime("%Y-%m-%d")
+    print(f"🛠 Обновляем поле {FIELD_CODE} на значение {today}")
 
-    update_resp = requests.post(f"{BITRIX_WEBHOOK_URL}/crm.deal.update.json", json={
+    update_url = f"{WEBHOOK_URL}/crm.deal.update.json"
+    update_resp = requests.post(update_url, json={
         "id": deal_id,
-        "fields": {FIELD_CODE: date_value}
-    }).json()
-
-    print("🛡 Сделка обновлена:", update_resp)
-    return jsonify(success=True)
-
-def format_phone_variants(phone):
-    raw = phone[-10:]
-    return [
-        f"+7{raw}",
-        f"+7({raw[:3]}){raw[3:6]}-{raw[6:8]}-{raw[8:]}",
-        f"+7 {raw[:3]} {raw[3:6]} {raw[6:8]} {raw[8:]}",
-        f"+7-{raw[:3]}-{raw[3:6]}-{raw[6:8]}-{raw[8:]}"
-    ]
-
-def find_contact_by_phone_variants(variants):
-    for phone in variants:
-        contact_filter = {
-            "filter": {"=PHONE": phone},
-            "select": ["ID", "PHONE"]
+        "fields": {
+            FIELD_CODE: today
         }
-        contact_url = f"{BITRIX_WEBHOOK_URL}/crm.contact.list.json"
-        response = requests.post(contact_url, json=contact_filter).json()
-        print(f"🔍 Ответ на поиск контакта по {phone}:", response)
-        result = response.get("result")
-        if result:
-            return result[0]["ID"]
-    return None
+    }).json()
+    print(f"🛡 Сделка обновлена: {update_resp}")
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    return "OK", 200
