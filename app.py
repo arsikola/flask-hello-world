@@ -66,7 +66,13 @@ def wazzup_webhook():
                 print("📄 Ответ Bitrix:", response.text)
                 return '', 500
 
-            contacts = result.get('result', [])
+            # 🔐 Новая проверка: валидность структуры
+            if "result" not in result or not isinstance(result["result"], list):
+                print(f"⚠️ Невалидный ответ Bitrix на странице {start}:")
+                print(result)
+                return '', 200
+
+            contacts = result["result"]
             print(f"📦 Получено {len(contacts)} контактов")
 
             if not contacts:
@@ -93,7 +99,6 @@ def wazzup_webhook():
             print("❌ Контакт не найден")
             return '', 200
 
-        # Поиск последней активной сделки
         try:
             print("🔍 Поиск активных сделок")
             deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
@@ -127,7 +132,6 @@ def wazzup_webhook():
 
         now = datetime.now().strftime('%Y-%m-%d')
 
-        # 🔒 Обновляем ТОЛЬКО пользовательское поле, никакой стадии!
         try:
             print(f"🛡 Обновляем сделку {deal_id}, только поле {FIELD_CODE} = {now}")
             update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
