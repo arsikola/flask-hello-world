@@ -31,17 +31,17 @@ def wazzup_webhook():
         last_10_digits = normalize_phone(phone)
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Поиск контакта по номеру
+        # Поиск контакта по номеру (без перебора страниц)
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
             "filter": {
                 "*PHONE": last_10_digits
             },
-            "select": ["ID", "PHONE"]
+            "select": ["ID"]
         })
 
-        print("🔍 Ответ на поиск контакта:", search_response.text)
         contact_result = search_response.json()
+        print("🔍 Ответ на поиск контакта:", contact_result)
 
         if not contact_result.get('result'):
             print("❌ Контакт не найден")
@@ -50,17 +50,20 @@ def wazzup_webhook():
         contact_id = contact_result['result'][0]['ID']
         print(f"✅ Контакт найден: {contact_id}")
 
-        # Поиск сделки по контакту
+        # Поиск сделки по контакту (первая попавшаяся)
         deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
         deal_response = requests.post(deal_search_url, json={
             "filter": {
                 "CONTACT_ID": contact_id
             },
-            "select": ["ID"]
+            "select": ["ID"],
+            "order": {
+                "DATE_CREATE": "DESC"
+            }
         })
 
-        print("🔍 Ответ на поиск сделки:", deal_response.text)
         deal_result = deal_response.json().get('result', [])
+        print("🔍 Ответ на поиск сделки:", deal_result)
 
         if not deal_result:
             print("❌ Сделки не найдены")
@@ -69,7 +72,7 @@ def wazzup_webhook():
         deal_id = deal_result[0]['ID']
         print(f"✅ Сделка найдена: {deal_id}")
 
-        # Обновляем только поле
+        # Обновляем только нужное поле
         now = datetime.now().strftime('%Y-%m-%d')
         update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
         update_response = requests.post(update_url, json={
@@ -79,7 +82,7 @@ def wazzup_webhook():
             }
         })
 
-        print("🛡 Сделка обновлена, только поле:", update_response.text)
+        print("🛡 Сделка обновлена:", update_response.text)
 
     except Exception as e:
         print("❗ Ошибка в обработке:", str(e))
