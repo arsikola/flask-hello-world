@@ -6,11 +6,12 @@ import time
 
 app = Flask(__name__)
 
-# Твой Bitrix24 вебхук
+# Вебхук Bitrix24
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
+# Кастомное поле для обновления даты
 FIELD_CODE = 'UF_CRM_1743763731661'
 
-# Функция нормализации телефона
+# Удаляем всё, кроме последних 10 цифр
 def normalize_phone(phone):
     return re.sub(r'\D', '', phone)[-10:]
 
@@ -20,9 +21,9 @@ def wazzup_webhook():
     print("📬 Вебхук от Wazzup:", data)
 
     try:
-        # Обрабатываем только если есть входящее сообщение
+        # Обрабатываем только входящие сообщения
         if 'messages' not in data or not data['messages']:
-            print("⚠️ Нет входящих сообщений — возможно статус или echo")
+            print("⚠️ Нет входящих сообщений — возможно echo или статус")
             return '', 200
 
         message = data['messages'][0]
@@ -30,6 +31,7 @@ def wazzup_webhook():
             print("➡️ Сообщение не входящее, пропускаем")
             return '', 200
 
+        # Получаем номер
         phone = message['chatId']
         print("📞 Получен номер:", phone)
 
@@ -39,9 +41,10 @@ def wazzup_webhook():
         last_10_digits = normalize_phone(phone)
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Поиск контакта по всем страницам
+        # Поиск контакта постранично
         contact_id = None
         start = 0
+
         while True:
             try:
                 contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
@@ -76,13 +79,13 @@ def wazzup_webhook():
                 break
 
             start = result['next']
-            time.sleep(0.3)  # 💡 Пауза между страницами
+            time.sleep(0.3)  # Защита от спама API
 
         if not contact_id:
             print("❌ Контакт не найден")
             return '', 200
 
-        # Поиск последних активных сделок
+        # Поиск последней активной сделки
         try:
             deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
             deal_response = requests.post(deal_search_url, json={
