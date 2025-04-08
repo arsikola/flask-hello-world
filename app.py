@@ -6,12 +6,10 @@ import time
 
 app = Flask(__name__)
 
-# Вебхук Bitrix24
+# Bitrix24 вебхук и поле
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
-# Кастомное поле для обновления даты
 FIELD_CODE = 'UF_CRM_1743763731661'
 
-# Удаляем всё, кроме последних 10 цифр
 def normalize_phone(phone):
     return re.sub(r'\D', '', phone)[-10:]
 
@@ -21,7 +19,6 @@ def wazzup_webhook():
     print("📬 Вебхук от Wazzup:", data)
 
     try:
-        # Обрабатываем только входящие сообщения
         if 'messages' not in data or not data['messages']:
             print("⚠️ Нет входящих сообщений — возможно echo или статус")
             return '', 200
@@ -31,7 +28,6 @@ def wazzup_webhook():
             print("➡️ Сообщение не входящее, пропускаем")
             return '', 200
 
-        # Получаем номер
         phone = message['chatId']
         print("📞 Получен номер:", phone)
 
@@ -41,12 +37,13 @@ def wazzup_webhook():
         last_10_digits = normalize_phone(phone)
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Поиск контакта постранично
+        # Поиск контакта с логами и паузой
         contact_id = None
         start = 0
 
         while True:
             try:
+                print(f"🔁 Поиск контактов, страница start={start}")
                 contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
                 response = requests.post(contact_search_url, json={
                     "select": ["ID", "PHONE"],
@@ -54,13 +51,15 @@ def wazzup_webhook():
                         "!PHONE": ""
                     },
                     "start": start
-                }, timeout=15)
+                }, timeout=30)
             except requests.exceptions.RequestException as e:
                 print(f"❌ Ошибка запроса к Bitrix (контакты): {e}")
                 return '', 500
 
             result = response.json()
             contacts = result.get('result', [])
+            print(f"📦 Получено {len(contacts)} контактов")
+
             if not contacts:
                 break
 
@@ -79,7 +78,7 @@ def wazzup_webhook():
                 break
 
             start = result['next']
-            time.sleep(0.3)  # Защита от спама API
+            time.sleep(0.3)
 
         if not contact_id:
             print("❌ Контакт не найден")
@@ -87,17 +86,18 @@ def wazzup_webhook():
 
         # Поиск последней активной сделки
         try:
+            print("🔍 Поиск активных сделок")
             deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
             deal_response = requests.post(deal_search_url, json={
                 "filter": {
                     "CONTACT_ID": contact_id,
-                    "!STAGE_SEMANTIC_ID": "F"  # Исключаем завершённые
+                    "!STAGE_SEMANTIC_ID": "F"
                 },
                 "select": ["ID", "DATE_CREATE"],
                 "order": {
                     "DATE_CREATE": "DESC"
                 }
-            }, timeout=15)
+            }, timeout=30)
         except requests.exceptions.RequestException as e:
             print(f"❌ Ошибка запроса к Bitrix (сделки): {e}")
             return '', 500
@@ -113,15 +113,16 @@ def wazzup_webhook():
         # Обновляем сделку
         now = datetime.now().strftime('%Y-%m-%d')
         try:
+            print(f"📝 Обновление сделки ID {deal_id} полем {FIELD_CODE} = {now}")
             update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
             update_response = requests.post(update_url, json={
                 "id": deal_id,
                 "fields": {
                     FIELD_CODE: now
                 }
-            }, timeout=15)
+            }, timeout=30)
 
-            print("📝 Ответ на обновление сделки:", update_response.text)
+            print("📝 Ответ от Bitrix:", update_response.text)
         except requests.exceptions.RequestException as e:
             print(f"❌ Ошибка при обновлении сделки: {e}")
             return '', 500
