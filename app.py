@@ -19,9 +19,9 @@ def wazzup_webhook():
     print("📬 Вебхук от Wazzup:", data)
 
     try:
-        # Проверка на входящее сообщение
+        # Обрабатываем только если есть входящее сообщение
         if 'messages' not in data or not data['messages']:
-            print("⚠️ Нет сообщений в теле запроса")
+            print("⚠️ Нет входящих сообщений — возможно статус или echo")
             return '', 200
 
         message = data['messages'][0]
@@ -38,7 +38,7 @@ def wazzup_webhook():
         last_10_digits = normalize_phone(phone)
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Перебор всех контактов с пагинацией
+        # Поиск контакта по всем страницам
         contact_id = None
         start = 0
         while True:
@@ -76,22 +76,26 @@ def wazzup_webhook():
             print("❌ Контакт не найден")
             return '', 200
 
-        # Поиск сделки по контакту
+        # Поиск последних активных сделок
         deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
         deal_response = requests.post(deal_search_url, json={
             "filter": {
-                "CONTACT_ID": contact_id
+                "CONTACT_ID": contact_id,
+                "!STAGE_SEMANTIC_ID": "F"  # Исключаем завершённые сделки
             },
-            "select": ["ID"]
+            "select": ["ID", "DATE_CREATE"],
+            "order": {
+                "DATE_CREATE": "DESC"  # Сортируем по дате создания
+            }
         })
 
         deal_result = deal_response.json().get('result', [])
         if not deal_result:
-            print("❌ Сделки не найдены")
+            print("❌ Активные сделки не найдены")
             return '', 200
 
         deal_id = deal_result[0]['ID']
-        print(f"✅ Сделка найдена: {deal_id}")
+        print(f"✅ Последняя активная сделка найдена: {deal_id}")
 
         # Обновляем сделку
         now = datetime.now().strftime('%Y-%m-%d')
