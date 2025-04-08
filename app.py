@@ -116,4 +116,43 @@ def wazzup_webhook():
                 return '', 500
 
             deal_result = deal_response.json().get('result', [])
-        except
+        except Exception as e:
+            print(f"❌ Ошибка при получении сделок: {e}")
+            return '', 500
+
+        if not deal_result:
+            print("❌ Активные сделки не найдены")
+            return '', 200
+
+        deal_id = deal_result[0]['ID']
+        print(f"✅ Последняя активная сделка найдена: {deal_id}")
+
+        now = datetime.now().strftime('%Y-%m-%d')
+        try:
+            print(f"📝 Обновление сделки ID {deal_id} полем {FIELD_CODE} = {now}")
+            update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
+            update_response = requests.post(update_url, json={
+                "id": deal_id,
+                "fields": {
+                    FIELD_CODE: now
+                }
+            }, timeout=30)
+
+            if update_response.status_code != 200:
+                print(f"❌ Ошибка HTTP при обновлении сделки: {update_response.status_code}")
+                print("📄 Ответ:", update_response.text)
+                return '', 500
+
+            print("📝 Ответ от Bitrix:", update_response.text)
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Ошибка при обновлении сделки: {e}")
+            return '', 500
+
+    except Exception as e:
+        print("❗ Общая ошибка обработки:", str(e))
+        return '', 500
+
+    return '', 200
+
+if __name__ == '__main__':
+    app.run(debug=True)
