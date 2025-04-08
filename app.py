@@ -2,6 +2,7 @@ from flask import Flask, request
 import requests
 from datetime import datetime
 import re
+import time
 
 app = Flask(__name__)
 
@@ -42,14 +43,18 @@ def wazzup_webhook():
         contact_id = None
         start = 0
         while True:
-            contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
-            response = requests.post(contact_search_url, json={
-                "select": ["ID", "PHONE"],
-                "filter": {
-                    "!PHONE": ""
-                },
-                "start": start
-            })
+            try:
+                contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
+                response = requests.post(contact_search_url, json={
+                    "select": ["ID", "PHONE"],
+                    "filter": {
+                        "!PHONE": ""
+                    },
+                    "start": start
+                }, timeout=15)
+            except requests.exceptions.RequestException as e:
+                print(f"❌ Ошибка запроса к Bitrix (контакты): {e}")
+                return '', 500
 
             result = response.json()
             contacts = result.get('result', [])
@@ -71,23 +76,28 @@ def wazzup_webhook():
                 break
 
             start = result['next']
+            time.sleep(0.3)  # 💡 Пауза между страницами
 
         if not contact_id:
             print("❌ Контакт не найден")
             return '', 200
 
         # Поиск последних активных сделок
-        deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
-        deal_response = requests.post(deal_search_url, json={
-            "filter": {
-                "CONTACT_ID": contact_id,
-                "!STAGE_SEMANTIC_ID": "F"  # Исключаем завершённые сделки
-            },
-            "select": ["ID", "DATE_CREATE"],
-            "order": {
-                "DATE_CREATE": "DESC"  # Сортируем по дате создания
-            }
-        })
+        try:
+            deal_search_url = f'{BITRIX_WEBHOOK}/crm.deal.list'
+            deal_response = requests.post(deal_search_url, json={
+                "filter": {
+                    "CONTACT_ID": contact_id,
+                    "!STAGE_SEMANTIC_ID": "F"  # Исключаем завершённые
+                },
+                "select": ["ID", "DATE_CREATE"],
+                "order": {
+                    "DATE_CREATE": "DESC"
+                }
+            }, timeout=15)
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Ошибка запроса к Bitrix (сделки): {e}")
+            return '', 500
 
         deal_result = deal_response.json().get('result', [])
         if not deal_result:
@@ -99,18 +109,23 @@ def wazzup_webhook():
 
         # Обновляем сделку
         now = datetime.now().strftime('%Y-%m-%d')
-        update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
-        update_response = requests.post(update_url, json={
-            "id": deal_id,
-            "fields": {
-                FIELD_CODE: now
-            }
-        })
+        try:
+            update_url = f'{BITRIX_WEBHOOK}/crm.deal.update'
+            update_response = requests.post(update_url, json={
+                "id": deal_id,
+                "fields": {
+                    FIELD_CODE: now
+                }
+            }, timeout=15)
 
-        print("📝 Ответ на обновление сделки:", update_response.text)
+            print("📝 Ответ на обновление сделки:", update_response.text)
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Ошибка при обновлении сделки: {e}")
+            return '', 500
 
     except Exception as e:
-        print("❗ Ошибка в обработке:", str(e))
+        print("❗ Общая ошибка обработки:", str(e))
+        return '', 500
 
     return '', 200
 
