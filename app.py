@@ -30,7 +30,7 @@ def wazzup_webhook():
         last_10_digits = phone[-10:]
         print(f"📞 Последние 10 цифр номера: {last_10_digits}")
 
-        # Поиск контакта по номеру (без указания типа телефона)
+        # Поиск контакта по номеру (без учета типа телефона, только по номеру)
         contact_search_url = f'{BITRIX_WEBHOOK}/crm.contact.list'
         search_response = requests.post(contact_search_url, json={
             "filter": {
@@ -39,14 +39,15 @@ def wazzup_webhook():
             "select": ["ID", "PHONE"]
         })
 
-        print("🔍 Ответ на поиск контакта:", search_response.text)
         contact_result = search_response.json()
+        contacts = contact_result.get('result', [])
+        print(f"🔍 Найдено контактов: {len(contacts)}")
 
-        if not contact_result.get('result'):
+        if not contacts:
             print("❌ Контакт не найден")
             return '', 200
 
-        contact_id = contact_result['result'][0]['ID']
+        contact_id = contacts[0]['ID']
         print(f"✅ Контакт найден: {contact_id}")
 
         # Поиск сделки по контакту
@@ -58,7 +59,6 @@ def wazzup_webhook():
             "select": ["ID"]
         })
 
-        print("🔍 Ответ на поиск сделки:", deal_response.text)
         deal_result = deal_response.json().get('result', [])
         if not deal_result:
             print("❌ Сделки не найдены")
