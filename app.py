@@ -3,8 +3,22 @@ import requests
 
 app = Flask(__name__)
 
-# 🔐 Вебхук Bitrix24
 BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
+
+@app.route('/fields', methods=['GET'])
+def get_fields():
+    response = requests.get(f'{BITRIX_WEBHOOK}/crm.deal.fields')
+    fields = response.json().get('result', {})
+
+    result_lines = []
+    for code, info in fields.items():
+        if code.startswith("UF_CRM"):
+            label = info.get('listLabel') or info.get('formLabel') or info.get('editFormLabel') or "—"
+            result_lines.append(f"{code}: {label}")
+    
+    result_text = "\n".join(result_lines)
+    print("📋 Список пользовательских полей:\n" + result_text)
+    return f"<pre>{result_text}</pre>"
 
 @app.route('/', methods=['POST'])
 def wazzup_webhook():
@@ -24,20 +38,18 @@ def wazzup_webhook():
         phone = message.get('chatId', '')
         print("📞 Получен номер:", phone)
 
-        # Убираем "7" в начале и оставляем последние 10 цифр
         if phone.startswith("7"):
             phone = phone[1:]
         last_10 = phone[-10:]
         print("📞 Последние 10 цифр номера:", last_10)
 
-        # Пример простого поиска контакта (ограничение 50)
-        search_response = requests.post(f'{BITRIX_WEBHOOK}/crm.contact.list', json={
+        contact_search = requests.post(f'{BITRIX_WEBHOOK}/crm.contact.list', json={
             "filter": {"*PHONE": last_10},
             "select": ["ID", "PHONE"],
             "start": 0
         })
-        result = search_response.json()
-        contacts = result.get('result', [])
+
+        contacts = contact_search.json().get('result', [])
         print(f"📦 Получено {len(contacts)} контактов")
         if not contacts:
             print("❌ Контакт не найден")
@@ -50,20 +62,6 @@ def wazzup_webhook():
         print("❗ Ошибка в обработке:", str(e))
 
     return '', 200
-
-# 🚀 Вспомогательная проверка — вывести все поля сделки
-def print_all_deal_fields():
-    print("\n🔍 Получение списка всех пользовательских полей сделки...\n")
-    response = requests.get(f'{BITRIX_WEBHOOK}/crm.deal.fields')
-    fields = response.json().get('result', {})
-
-    for code, info in fields.items():
-        if code.startswith("UF_CRM"):
-            label = info.get('listLabel') or info.get('formLabel') or info.get('editFormLabel') or "—"
-            print(f"{code}: {label}")
-
-# ⚠️ ЭТО ВЫПОЛНИТСЯ ПРИ ЗАПУСКЕ Render
-print_all_deal_fields()
 
 if __name__ == '__main__':
     app.run(debug=True)
