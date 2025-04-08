@@ -5,7 +5,7 @@ if __name__ == '__main__':
 
     BITRIX_WEBHOOK = 'https://esprings.bitrix24.ru/rest/1/5s5gfz64192lxuyz'
     DEAL_ID = 91771  # замени на ID нужной сделки
-    FIELD_CODE = 'UF_CRM_1743763731661'
+    FIELD_CODE = ''
     TEST_DATE = '2025-01-01'
 
     response = requests.post(f'{BITRIX_WEBHOOK}/crm.deal.update', json={
