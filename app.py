@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request
 import requests
 from datetime import datetime
 
@@ -84,27 +84,16 @@ def wazzup_webhook():
     deal_id = deals[0]["ID"]
     print(f"✅ Сделка найдена: {deal_id}")
 
-    # Обновляем поле
-    today = datetime.today().strftime("%Y-%m-%d")
-    print(f"🛠 Обновляем поле {FIELD_CODE} на значение {today}")
+    # Обновляем стадию сделки на "PREPARATION"
+    print(f"🛠 Обновляем стадию сделки на 'PREPARATION'")
 
     update_url = f"{WEBHOOK_URL}/crm.deal.update.json"
     update_resp = requests.post(update_url, json={
         "id": deal_id,
         "fields": {
-            FIELD_CODE: today
+            "STAGE_ID": "PREPARATION"  # Устанавливаем стадию на "PREPARATION"
         }
     }).json()
     print(f"🛡 Сделка обновлена: {update_resp}")
 
     return "OK", 200
-
-
-# 🔍 Новый эндпоинт для получения всех стадий сделок
-@app.route("/stages", methods=["GET"])
-def get_deal_stages():
-    status_url = f"{WEBHOOK_URL}/crm.status.list.json"
-    payload = {
-        "filter": {
-            "ENTITY_ID": "DEAL_STAGE"
-        }
