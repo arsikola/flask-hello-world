@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
 from datetime import datetime
 
@@ -98,3 +98,13 @@ def wazzup_webhook():
     print(f"🛡 Сделка обновлена: {update_resp}")
 
     return "OK", 200
+
+
+# 🔍 Новый эндпоинт для получения всех стадий сделок
+@app.route("/stages", methods=["GET"])
+def get_deal_stages():
+    status_url = f"{WEBHOOK_URL}/crm.status.list.json"
+    payload = {
+        "filter": {
+            "ENTITY_ID": "DEAL_STAGE"
+        }
