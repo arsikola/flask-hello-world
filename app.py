@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 
 app = Flask(__name__)
-WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+WEBHOOK_URL = os.getenv("https://esprings.bitrix24.ru/rest/1/psr71rhk2jl4jz0m")
 FIELD_CODE = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
 
 @app.route("/", methods=["POST"])
