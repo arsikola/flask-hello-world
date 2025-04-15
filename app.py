@@ -4,7 +4,11 @@ import requests
 from datetime import datetime
 
 app = Flask(__name__)
-WEBHOOK_URL = os.getenv("https://esprings.bitrix24.ru/rest/1/psr71rhk2jl4jz0m")
+
+# Вставляем ссылки на вебхуки
+WEBHOOK_URL_CONTACTS = "https://esprings.bitrix24.ru/rest/1/yrad0suj5361davr/"  # Вебхук для crm.contact.list
+WEBHOOK_URL_DEALS = "https://esprings.bitrix24.ru/rest/1/ii7i0pazh2ky1nlg/"  # Вебхук для crm.deal.list и crm.deal.update
+
 FIELD_CODE = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
 
 @app.route("/", methods=["POST"])
@@ -44,8 +48,7 @@ def wazzup_webhook():
             },
             "select": ["ID", "PHONE"]
         }
-        contact_url = f"{WEBHOOK_URL}/crm.contact.list.json"
-        contact_resp = requests.post(contact_url, json=contact_filter).json()
+        contact_resp = requests.post(f"{WEBHOOK_URL_CONTACTS}crm.contact.list.json", json=contact_filter).json()
         print(f"🔍 Ответ на поиск контакта по {variant}: {contact_resp}")
 
         result = contact_resp.get("result", [])
@@ -67,7 +70,7 @@ def wazzup_webhook():
     print(f"✅ Контакт найден: {contact_id}")
 
     # Поиск сделок по контакту
-    deals_url = f"{WEBHOOK_URL}/crm.deal.list.json"
+    deals_url = f"{WEBHOOK_URL_DEALS}crm.deal.list.json"
     deals_resp = requests.post(deals_url, json={
         "filter": {"CONTACT_ID": contact_id},
         "select": ["ID"],
@@ -87,7 +90,7 @@ def wazzup_webhook():
     # Обновляем стадию сделки на "PREPARATION"
     print(f"🛠 Обновляем стадию сделки на 'PREPARATION'")
 
-    update_url = f"{WEBHOOK_URL}/crm.deal.update.json"
+    update_url = f"{WEBHOOK_URL_DEALS}crm.deal.update.json"
     update_resp = requests.post(update_url, json={
         "id": deal_id,
         "fields": {
