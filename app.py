@@ -69,25 +69,37 @@ def wazzup_webhook():
 
     print(f"✅ Контакт найден: {contact_id}")
 
-    # Поиск сделок по контакту
+    # Поиск сделок по контакту в стадии "PREPARATION"
     deals_url = f"{WEBHOOK_URL_DEALS}crm.deal.list.json"
     deals_resp = requests.post(deals_url, json={
-        "filter": {"CONTACT_ID": contact_id},
-        "select": ["ID"],
+        "filter": {"CONTACT_ID": contact_id, "STAGE_ID": "PREPARATION"},  # Фильтруем по стадии "PREPARATION"
+        "select": ["ID", "STAGE_ID", FIELD_CODE],  # Получаем ID и поле "Дата последнего сообщения"
         "order": {"ID": "DESC"}
     }).json()
 
     deals = deals_resp.get("result", [])
-    print(f"📦 Найдено сделок: {len(deals)}")
+    print(f"📦 Найдено сделок в стадии 'PREPARATION': {len(deals)}")
 
     if not deals:
-        print("❌ Сделки не найдены")
+        print("❌ Сделки в стадии 'PREPARATION' не найдены")
         return "OK", 200
 
-    deal_id = deals[0]["ID"]
-    print(f"✅ Сделка найдена: {deal_id}")
+    # Текущая дата
+    today = datetime.today().strftime("%Y-%m-%d")
+    
+    # Обновляем поле "Дата последнего сообщения" для каждой найденной сделки
+    for deal in deals:
+        deal_id = deal["ID"]
+        print(f"✅ Сделка найдена: {deal_id}")
 
-    }).json()
-    print(f"🛡 Сделка обновлена: {update_resp}")
+        # Обновляем поле "Дата последнего сообщения"
+        update_url = f"{WEBHOOK_URL_DEALS}crm.deal.update.json"
+        update_resp = requests.post(update_url, json={
+            "id": deal_id,
+            "fields": {
+                FIELD_CODE: today  # Устанавливаем текущую дату в поле "Дата последнего сообщения"
+            }
+        }).json()
+        print(f"🛡 Сделка обновлена: {update_resp}")
 
     return "OK", 200
