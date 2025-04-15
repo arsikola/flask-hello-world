@@ -87,15 +87,6 @@ def wazzup_webhook():
     deal_id = deals[0]["ID"]
     print(f"✅ Сделка найдена: {deal_id}")
 
-    # Обновляем стадию сделки на "PREPARATION"
-    print(f"🛠 Обновляем стадию сделки на 'PREPARATION'")
-
-    update_url = f"{WEBHOOK_URL_DEALS}crm.deal.update.json"
-    update_resp = requests.post(update_url, json={
-        "id": deal_id,
-        "fields": {
-            "STAGE_ID": "PREPARATION"  # Устанавливаем стадию на "PREPARATION"
-        }
     }).json()
     print(f"🛡 Сделка обновлена: {update_resp}")
 
