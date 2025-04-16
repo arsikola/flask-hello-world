@@ -9,7 +9,16 @@ app = Flask(__name__)
 WEBHOOK_URL_CONTACTS = "https://esprings.bitrix24.ru/rest/1/yrad0suj5361davr/"  # Вебхук для crm.contact.list
 WEBHOOK_URL_DEALS = "https://esprings.bitrix24.ru/rest/1/ii7i0pazh2ky1nlg/"  # Вебхук для crm.deal.list и crm.deal.update
 
-FIELD_CODE = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
+# Идентификаторы полей
+OUR_LAST_MESSAGE_DATE_FIELD = "UF_CRM_1743763719781"  # Дата нашего последнего сообщения
+CLIENT_LAST_REPLY_DATE_FIELD = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
+
+# Стадии
+TARGET_STAGE = "3"  # Стадия "Без ответа" (ID: 3)
+CURRENT_STAGE = "PREPARATION"  # Стадия "Стоимость озвучена"
+
+# Параметры времени
+DAYS_LIMIT_AFTER_MESSAGE = 10  # Если не было ответа через 10 дней после нашего последнего сообщения
 
 @app.route("/", methods=["POST"])
 def wazzup_webhook():
@@ -73,7 +82,7 @@ def wazzup_webhook():
     deals_url = f"{WEBHOOK_URL_DEALS}crm.deal.list.json"
     deals_resp = requests.post(deals_url, json={
         "filter": {"CONTACT_ID": contact_id, "STAGE_ID": "PREPARATION"},  # Фильтруем по стадии "PREPARATION"
-        "select": ["ID", "STAGE_ID", FIELD_CODE],  # Получаем ID и поле "Дата последнего сообщения"
+        "select": ["ID", "STAGE_ID", OUR_LAST_MESSAGE_DATE_FIELD, CLIENT_LAST_REPLY_DATE_FIELD],  # Получаем ID и даты
         "order": {"ID": "DESC"}
     }).json()
 
@@ -92,12 +101,54 @@ def wazzup_webhook():
         deal_id = deal["ID"]
         print(f"✅ Сделка найдена: {deal_id}")
 
+        # Получаем дату нашего последнего сообщения
+        last_message_date_str = deal.get(OUR_LAST_MESSAGE_DATE_FIELD)
+        if not last_message_date_str:
+            continue  # Если поле пустое — неизвестно когда было сообщение
+
+        last_message_date = datetime.strptime(last_message_date_str, "%Y-%m-%d")
+
+        # Проверка, прошло ли 10 дней с момента нашего последнего сообщения
+        if (datetime.today() - last_message_date).days >= DAYS_LIMIT_AFTER_MESSAGE:
+            print(f"✅ Сделка {deal_id} молчит уже {DAYS_LIMIT_AFTER_MESSAGE} дней после нашего сообщения.")
+            
+            # Получаем все входящие сообщения от клиента
+            messages_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.activity.list.json", json={
+                "filter": {"DEAL_ID": deal_id},
+                "order": {"ID": "DESC"},
+                "select": ["ID", "COMMENT", "TYPE_ID"]
+            }).json()
+
+            messages = messages_resp.get("result", [])
+            client_replied = False
+
+            # Проверяем, есть ли входящее сообщение от клиента
+            for message in messages:
+                if message["TYPE_ID"] == "INCOMING" and message.get("COMMENT", "").strip():
+                    client_replied = True
+                    break  # Если найдено входящее сообщение от клиента, прекращаем поиск
+
+            # Если нет входящего сообщения от клиента
+            if not client_replied:
+                print(f"🔕 Сделка {deal_id} не получила ответа от клиента за 10 дней, переводим в стадию 'Без ответа'...")
+
+                # Перемещаем сделку в стадию "Без ответа" (ID: 3)
+                update_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.deal.update.json", json={
+                    "id": deal_id,
+                    "fields": {
+                        "STAGE_ID": TARGET_STAGE  # ID стадии "Без ответа"
+                    }
+                }).json()
+                print(f"✅ Сделка {deal_id} перемещена в стадию 'Без ответа'.")
+            else:
+                print(f"💬 Сделка {deal_id} ожидает ответа клиента или уже был ответ.")
+        
         # Обновляем поле "Дата последнего сообщения"
         update_url = f"{WEBHOOK_URL_DEALS}crm.deal.update.json"
         update_resp = requests.post(update_url, json={
             "id": deal_id,
             "fields": {
-                FIELD_CODE: today  # Устанавливаем текущую дату в поле "Дата последнего сообщения"
+                OUR_LAST_MESSAGE_DATE_FIELD: today  # Устанавливаем текущую дату в поле "Дата последнего сообщения"
             }
         }).json()
         print(f"🛡 Сделка обновлена: {update_resp}")
