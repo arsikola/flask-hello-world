@@ -6,27 +6,26 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Вставляем ссылки на вебхуки
-WEBHOOK_URL_CONTACTS = "https://esprings.bitrix24.ru/rest/1/yrad0suj5361davr/"  # Вебхук для crm.contact.list
-WEBHOOK_URL_DEALS = "https://esprings.bitrix24.ru/rest/1/ii7i0pazh2ky1nlg/"  # Вебхук для crm.deal.list и crm.deal.update
+WEBHOOK_URL_CONTACTS = "https://esprings.bitrix24.ru/rest/1/yrad0suj5361davr/"
+WEBHOOK_URL_DEALS = "https://esprings.bitrix24.ru/rest/1/ii7i0pazh2ky1nlg/"
 
 # Идентификаторы полей
 OUR_LAST_MESSAGE_DATE_FIELD = "UF_CRM_1743763719781"  # Дата нашего последнего сообщения
 CLIENT_LAST_REPLY_DATE_FIELD = "UF_CRM_1743763731661"  # Дата последнего ответа клиента
 
 # Стадии
-TARGET_STAGE = "3"  # Стадия "Без ответа" (ID: 3)
-CURRENT_STAGE = "PREPARATION"  # Стадия "Стоимость озвучена"
+TARGET_STAGE = "3"  # ID стадии "Без ответа"
+CURRENT_STAGE = "PREPARATION"  # Текущая стадия сделки ("Стоимость озвучена")
 
 # Параметры времени
-DAYS_LIMIT_AFTER_MESSAGE = 10  # Если не было ответа через 10 дней после нашего последнего сообщения
+DAYS_LIMIT_AFTER_MESSAGE = 10  # Сколько дней ждать ответа от клиента
 
 @app.route("/", methods=["POST"])
 def wazzup_webhook():
     data = request.json
     print(f"📬 Вебхук от Wazzup: {data}")
 
-    # Обработка только входящих сообщений
-    if not data.get("messages"):
+    if "messages" not in data:
         print("❗ Ошибка в обработке: 'messages'")
         return "OK", 200
 
@@ -38,7 +37,7 @@ def wazzup_webhook():
     phone_raw = message.get("chatId")
     print(f"📞 Получен номер: {phone_raw}")
 
-    # Генерация форматов телефона
+    # Генерация вариантов номера
     phone_tail = phone_raw[-10:]
     variants = [
         f"+7{phone_tail}",
@@ -48,13 +47,11 @@ def wazzup_webhook():
     ]
     print(f"📞 Форматы номера для поиска: {variants}")
 
-    # Поиск контакта по всем вариантам
+    # Поиск контакта
     contact_id = None
     for variant in variants:
         contact_filter = {
-            "filter": {
-                "PHONE": variant
-            },
+            "filter": {"PHONE": variant},
             "select": ["ID", "PHONE"]
         }
         contact_resp = requests.post(f"{WEBHOOK_URL_CONTACTS}crm.contact.list.json", json=contact_filter).json()
@@ -78,82 +75,63 @@ def wazzup_webhook():
 
     print(f"✅ Контакт найден: {contact_id}")
 
-    # Поиск сделок по контакту в стадии "PREPARATION"
-    deals_url = f"{WEBHOOK_URL_DEALS}crm.deal.list.json"
-    deals_resp = requests.post(deals_url, json={
-        "filter": {"CONTACT_ID": contact_id, "STAGE_ID": "PREPARATION"},  # Фильтруем по стадии "PREPARATION"
-        "select": ["ID", "STAGE_ID", OUR_LAST_MESSAGE_DATE_FIELD, CLIENT_LAST_REPLY_DATE_FIELD],  # Получаем ID и даты
+    # Поиск сделок в стадии CURRENT_STAGE
+    deals_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.deal.list.json", json={
+        "filter": {"CONTACT_ID": contact_id, "STAGE_ID": CURRENT_STAGE},
+        "select": ["ID", "STAGE_ID", OUR_LAST_MESSAGE_DATE_FIELD, CLIENT_LAST_REPLY_DATE_FIELD],
         "order": {"ID": "DESC"}
     }).json()
 
     deals = deals_resp.get("result", [])
-    print(f"📦 Найдено сделок в стадии 'PREPARATION': {len(deals)}")
+    print(f"📦 Найдено сделок в стадии '{CURRENT_STAGE}': {len(deals)}")
 
     if not deals:
-        print("❌ Сделки в стадии 'PREPARATION' не найдены")
+        print("❌ Сделки в нужной стадии не найдены")
         return "OK", 200
 
-    # Текущая дата
     today = datetime.today().strftime("%Y-%m-%d")
     print(f"🕑 Текущая дата: {today}")
-    
-    # Обновляем поле "Дата последнего сообщения" для каждой найденной сделки
+
     for deal in deals:
         deal_id = deal["ID"]
-        print(f"✅ Сделка найдена: {deal_id}")
+        print(f"✅ Работаем со сделкой: {deal_id}")
 
-        # Получаем дату нашего последнего сообщения
-        last_message_date_str = deal.get(OUR_LAST_MESSAGE_DATE_FIELD)
-        if not last_message_date_str:
-            continue  # Если поле пустое — неизвестно когда было сообщение
-
-        last_message_date = datetime.strptime(last_message_date_str, "%Y-%m-%d")
-
-        # Проверка, прошло ли 10 дней с момента нашего последнего сообщения
-        if (datetime.today() - last_message_date).days >= DAYS_LIMIT_AFTER_MESSAGE:
-            print(f"✅ Сделка {deal_id} молчит уже {DAYS_LIMIT_AFTER_MESSAGE} дней после нашего сообщения.")
-            
-            # Получаем все входящие сообщения от клиента
-            messages_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.activity.list.json", json={
-                "filter": {"DEAL_ID": deal_id},
-                "order": {"ID": "DESC"},
-                "select": ["ID", "COMMENT", "TYPE_ID"]
-            }).json()
-
-            messages = messages_resp.get("result", [])
-            client_replied = False
-
-            # Проверяем, есть ли входящее сообщение от клиента
-            for message in messages:
-                if message["TYPE_ID"] == "INCOMING" and message.get("COMMENT", "").strip():
-                    client_replied = True
-                    break  # Если найдено входящее сообщение от клиента, прекращаем поиск
-
-            # Если нет входящего сообщения от клиента
-            if not client_replied:
-                print(f"🔕 Сделка {deal_id} не получила ответа от клиента за 10 дней, переводим в стадию 'Без ответа'...")
-
-                # Перемещаем сделку в стадию "Без ответа" (ID: 3)
-                update_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.deal.update.json", json={
-                    "id": deal_id,
-                    "fields": {
-                        "STAGE_ID": TARGET_STAGE  # ID стадии "Без ответа"
-                    }
-                }).json()
-                print(f"✅ Сделка {deal_id} перемещена в стадию 'Без ответа'.")
-            else:
-                print(f"💬 Сделка {deal_id} ожидает ответа клиента или уже был ответ.")
-        
-        # Обновляем поле "Дата последнего сообщения"
-        update_url = f"{WEBHOOK_URL_DEALS}crm.deal.update.json"
-        update_resp = requests.post(update_url, json={
+        # 1️⃣ Обновляем дату последнего ответа клиента
+        update_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.deal.update.json", json={
             "id": deal_id,
             "fields": {
-                OUR_LAST_MESSAGE_DATE_FIELD: today  # Устанавливаем текущую дату в поле "Дата последнего сообщения"
+                CLIENT_LAST_REPLY_DATE_FIELD: today
             }
         }).json()
+        print(f"🛡 Обновили дату последнего ответа клиента для сделки {deal_id}: {update_resp}")
 
-        # Логирование ответа от API
-        print(f"🛡 Ответ от Bitrix24 на обновление сделки {deal_id}: {update_resp}")
+        # 2️⃣ Проверяем: прошло ли 10 дней без ответа клиента
+        last_message_date_str = deal.get(OUR_LAST_MESSAGE_DATE_FIELD)
+        if not last_message_date_str:
+            print(f"⚠️ Нет даты нашего последнего сообщения для сделки {deal_id}")
+            continue
+
+        try:
+            last_message_date = datetime.strptime(last_message_date_str, "%Y-%m-%d")
+        except ValueError:
+            print(f"⚠️ Неверный формат даты в поле OUR_LAST_MESSAGE_DATE_FIELD для сделки {deal_id}")
+            continue
+
+        days_passed = (datetime.today() - last_message_date).days
+        print(f"📅 Прошло дней с последнего сообщения: {days_passed}")
+
+        if days_passed >= DAYS_LIMIT_AFTER_MESSAGE:
+            print(f"🔔 Переводим сделку {deal_id} в стадию 'Без ответа'")
+
+            move_resp = requests.post(f"{WEBHOOK_URL_DEALS}crm.deal.update.json", json={
+                "id": deal_id,
+                "fields": {
+                    "STAGE_ID": TARGET_STAGE
+                }
+            }).json()
+            print(f"✅ Сделка {deal_id} переведена в стадию 'Без ответа': {move_resp}")
 
     return "OK", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
