@@ -26,7 +26,7 @@ def wazzup_webhook():
     print(f"📬 Вебхук от Wazzup: {data}")
 
     # Обработка только входящих сообщений
-    if "messages" not in data:
+    if not data.get("messages"):
         print("❗ Ошибка в обработке: 'messages'")
         return "OK", 200
 
